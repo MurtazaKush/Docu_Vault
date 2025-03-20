@@ -1,6 +1,6 @@
 import json
 from Crypto.Cipher import AES
-from SSS import get_secret  # Importing SSS reconstruction function
+from SSS import get_secret  # Importing Shamir's Secret Sharing reconstruction function
 
 def bitstring_to_bytes(bitstring):
     """Convert a bitstring ('0' and '1') back to bytes."""
@@ -14,14 +14,35 @@ def aes_decrypt(ciphertext, key, iv):
     cipher = AES.new(key, AES.MODE_CTR, nonce=iv)
     return cipher.decrypt(ciphertext)
 
-def decrypt_doc(encrypted_filename, reconstructed_bitstring):
+# Dictionary for changeable decryption algorithms
+decryption_algorithms = {
+    "AES-CTR": {
+        "decrypt": aes_decrypt
+    }
+}
+
+def decrypt_doc(encrypted_filename, secret_shares, algo="AES-CTR"):
     """
-    Decrypts a document using a reconstructed bitstring.
+    Decrypts a document using the specified algorithm and secret sharing.
+
+    :param encrypted_filename: The encrypted file to decrypt.
+    :param secret_shares: JSON string containing secret shares.
+    :param algo: The decryption algorithm to use (default: "AES-CTR").
+    :return: The decrypted file name.
     """
+    if algo not in decryption_algorithms:
+        raise ValueError(f"Unsupported decryption algorithm: {algo}")
+
+    # Fetch decryption function
+    decrypt_func = decryption_algorithms[algo]["decrypt"]
+
+    # Reconstruct key + IV from secret shares
+    reconstructed_bitstring = get_secret(secret_shares)
+
     # Convert bitstring back to bytes
     key_iv_bytes = bitstring_to_bytes(reconstructed_bitstring)
-    
-    # Extract AES key and IV
+
+    # Extract key and IV
     key = key_iv_bytes[:32]  # First 32 bytes = AES key
     iv = key_iv_bytes[32:]   # Remaining 8 bytes = IV
 
@@ -30,7 +51,7 @@ def decrypt_doc(encrypted_filename, reconstructed_bitstring):
         ciphertext = f.read()
 
     # Decrypt
-    plaintext = aes_decrypt(ciphertext, key, iv)
+    plaintext = decrypt_func(ciphertext, key, iv)
 
     # Save decrypted file
     decrypted_filename = encrypted_filename.replace(".enc", "_decrypted")

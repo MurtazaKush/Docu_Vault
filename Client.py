@@ -1,204 +1,104 @@
-import os
-import sys
-import json
-import time
-import inquirer
-import fire
 import requests
-import typer
+import click
 from rich.console import Console
-from rich.prompt import Prompt
-from rich.table import Table
+from hash_rsa import generate_hash, hash_to_rsa_key
 
+BASE_URL = "http://127.0.0.1:8000"  # Change if server is hosted elsewhere
 console = Console()
-API_BASE_URL = "http://localhost:8000"  # FastAPI backend URL (placeholder)
-SESSION_FILE = "session.json"
 
-class SecureVaultCLI:
-    def __init__(self):
-        self.username = None
-        self.load_session()
+class SecureVaultClient:
+    def signup(self, username: str, password: str):
+        """Signup a new user."""
+        # Hash the password
+        passhash = generate_hash(password)
+        
+        # Generate RSA keys
+        private_key, public_key = hash_to_rsa_key(username, password)
+        pb_key = public_key.export_key().decode()  # Convert public key to string
 
-    def load_session(self):
-        """Load user session from file."""
-        if os.path.exists(SESSION_FILE):
-            try:
-                with open(SESSION_FILE, "r") as f:
-                    data = json.load(f)
-                    self.username = data.get("username")
-            except Exception:
-                self.username = None
-
-    def save_session(self):
-        """Save user session to file."""
-        with open(SESSION_FILE, "w") as f:
-            json.dump({"username": self.username}, f)
-
-    def clear_session(self):
-        """Clear user session on logout."""
-        if os.path.exists(SESSION_FILE):
-            os.remove(SESSION_FILE)
-        self.username = None
-
-    def main(self):
-        """Interactive Main Menu for the Secure Document Vault CLI."""
-        while True:
-            display_header("Secure Document Vault")
-            # If not logged in, show authentication menu
-            if not self.username:
-                choice = inquirer.list_input(
-                    "Select Option",
-                    choices=["Register", "Login", "Exit"]
-                )
-                if choice == "Register":
-                    self.register()
-                elif choice == "Login":
-                    self.login()
-                else:
-                    console.print("[bold red]Exiting...[/bold red]")
-                    break
-            else:
-                # If logged in, show home menu
-                self.home_menu()
-                break
-
-    def register(self):
-        """Register a new user."""
-        username = Prompt.ask("[bold cyan]Enter a new username[/]")
-        password = Prompt.ask("[bold cyan]Enter a password[/]", password=True)
-        console.print("[yellow]Registering user...[/yellow]")
-        time.sleep(1)  # Simulate processing delay
-
-        # Placeholder: Call your backend API for registration
-        response = requests.post(f"{API_BASE_URL}/register", json={"username": username, "password": password})
-        if response.status_code == 201:
-            console.print(f"[green]User '{username}' registered successfully![/green]")
-        else:
-            console.print(f"[red]Error: {response.json().get('detail', 'Registration failed!')}[/red]")
-        self.main()
-
-    def login(self):
-        """Login to the system."""
-        username = Prompt.ask("[bold cyan]Enter your username[/]")
-        password = Prompt.ask("[bold cyan]Enter your password[/]", password=True)
-        console.print("[yellow]Logging in...[/yellow]")
-        time.sleep(1)  # Simulate processing delay
-
-        # Placeholder: Call your backend API for login
-        response = requests.post(f"{API_BASE_URL}/login", json={"username": username, "password": password})
+        response = requests.post(f"{BASE_URL}/signup/", json={
+            "username": username,
+            "passhash": passhash,
+            "pb_key": pb_key
+        })
         if response.status_code == 200:
-            self.username = username
-            self.save_session()
-            console.print(f"[green]Welcome, {username}![/green]")
-            self.home_menu()
+            console.print("[green]Signup successful![/green]")
         else:
-            console.print(f"[red]Error: {response.json().get('detail', 'Login failed!')}[/red]")
-            self.main()
+            console.print(f"[red]Signup failed! {response.text}[/red]")
 
-    def home_menu(self):
-        """Should enter Home menu after successful login."""
-        while True:
-            display_header(f"Welcome, {self.username}")
-            table = Table(title="Secure Vault - Main Menu")
-            table.add_column("Option", style="cyan")
-            table.add_column("Description", style="magenta")
-            table.add_row("1", "Create New Document")
-            table.add_row("2", "Approve Requests")
-            table.add_row("3", "Request Access")
-            table.add_row("4", "Logout")
-            console.print(table)
+    def login(self, username: str, password: str):
+        """Login a user."""
+        # Hash the password
+        passhash = generate_hash(password)
 
-            choice = Prompt.ask("[bold yellow]Select an option[/]")
-            if choice == "1":
-                self.create_document()
-            elif choice == "2":
-                self.approve_requests()
-            elif choice == "3":
-                self.request_access()
-            elif choice == "4":
-                console.print("[red]Logging out...[/red]")
-                self.clear_session()
-                break
-            else:
-                console.print("[red]Invalid choice! Try again.[/red]")
-
-    def create_document(self):
-        """Create and upload a document."""
-        doc_name = Prompt.ask("[bold cyan]Enter document name[/bold cyan]")
-        owners = Prompt.ask("[bold cyan]Enter owner usernames (comma-separated)[/bold cyan]").split(",")
-        threshold_users = Prompt.ask("[bold cyan]Enter threshold users (comma-separated)[/bold cyan]").split(",")
-        console.print(f"[yellow]Encrypting and uploading '{doc_name}'...[/yellow]")
-        time.sleep(1)  # To simulate encryption delay adding sleep here
-
-        # Call backend API for document upload
-        response = requests.post(
-            f"{API_BASE_URL}/upload_document",
-            json={"username": self.username, "doc_name": doc_name, "owners": owners, "threshold_users": threshold_users},
-        )
-        if response.status_code == 201:
-            console.print(f"[green]Document '{doc_name}' uploaded successfully![/green]")
+        response = requests.post(f"{BASE_URL}/login/", json={
+            "username": username,
+            "passhash": passhash
+        })
+        if response.status_code == 200 and response.json():
+            console.print("[green]Login successful![/green]")
         else:
-            console.print(f"[red]Error: {response.json().get('detail', 'Upload failed!')}[/red]")
-        self.home_menu()
+            console.print(f"[red]Login failed! {response.text}[/red]")
 
-    def approve_requests(self):
-        """Approve pending access requests."""
-        console.print("[blue]Fetching pending requests...[/blue]")
-        response = requests.get(f"{API_BASE_URL}/pending_requests", params={"username": self.username})
-        if response.status_code == 200:
-            requests_list = response.json().get("requests", [])
-            if not requests_list:
-                console.print("[green]No pending requests![/green]")
-                self.home_menu()
-                return
-            table = Table(title="Pending Requests")
-            table.add_column("Request ID", style="cyan")
-            table.add_column("Document", style="magenta")
-            table.add_column("Requester", style="yellow")
-            for req in requests_list:
-                table.add_row(str(req["request_id"]), req["doc_name"], req["requester"])
-            console.print(table)
-            req_id = Prompt.ask("[bold cyan]Enter Request ID to approve (or 'q' to quit)[/bold cyan]")
-            if req_id.lower() == "q":
-                self.home_menu()
-                return
-            # Here the Approve request API call should be added
-            response = requests.post(f"{API_BASE_URL}/approve_request", json={"request_id": req_id})
-            if response.status_code == 200:
-                console.print("[green]Request approved successfully![/green]")
-            else:
-                console.print(f"[red]Error: {response.json().get('detail', 'Approval failed!')}[/red]")
+    def change_password(self, username: str, old_password: str, new_password: str):
+        """Change user password and update secrets."""
+        # Hash the old and new passwords
+        old_passhash = generate_hash(old_password)
+        new_passhash = generate_hash(new_password)
+
+        # Generate new RSA keys
+        private_key, public_key = hash_to_rsa_key(username, new_password)
+        new_pb_key = public_key.export_key().decode()  # Convert public key to string
+
+        # Fetch existing secrets
+        response = requests.get(f"{BASE_URL}/change_pass/", json={
+            "username": username,
+            "passhash": old_passhash
+        })
+        if response.status_code != 200 or not response.json()["valid"]:
+            console.print("[red]Invalid credentials or no secrets found.[/red]")
+            return
+
+        # Update secrets with new password
+        updated_secrets = response.json()
+        response = requests.post(f"{BASE_URL}/change_pass/", json={
+            "username": username,
+            "oldpasshash": old_passhash,
+            "newpasshash": new_passhash,
+            "updated_secret": updated_secrets,
+            "newpb": new_pb_key
+        })
+        if response.status_code == 200 and response.json():
+            console.print("[green]Password changed successfully![/green]")
         else:
-            console.print(f"[red]Error: {response.json().get('detail', 'Failed to fetch requests!')}[/red]")
-        self.home_menu()
+            console.print(f"[red]Password change failed! {response.text}[/red]")
 
-    def request_access(self):
-        """Request access to a document."""
-        doc_name = Prompt.ask("[bold cyan]Enter document name[/bold cyan]")
-        console.print(f"[yellow]Requesting access to '{doc_name}'...[/yellow]")
-        # Placeholder: Call backend API for access request
-        response = requests.post(
-            f"{API_BASE_URL}/request_access",
-            json={"username": self.username, "doc_name": doc_name},
-        )
-        if response.status_code == 200:
-            console.print("[green]Access request sent successfully![/green]")
-        else:
-            console.print(f"[red]Error: {response.json().get('detail', 'Request failed!')}[/red]")
-        self.home_menu()
+@click.group()
+def cli():
+    """Secure Document Vault CLI."""
+    pass
 
-def display_header(title):
-    console.print(f"\n[bold cyan]{'='*50}[/]")
-    console.print(f"[bold yellow]{title.upper()}[/]")
-    console.print(f"[bold cyan]{'='*50}[/]\n")
+@cli.command()
+@click.argument("username")
+@click.argument("password")
+def signup(username, password):
+    """Signup command."""
+    SecureVaultClient().signup(username, password)
 
-def interactive_mode():
-    cli = SecureVaultCLI()
-    cli.main()
+@cli.command()
+@click.argument("username")
+@click.argument("password")
+def login(username, password):
+    """Login command."""
+    SecureVaultClient().login(username, password)
+
+@cli.command()
+@click.argument("username")
+@click.argument("old_password")
+@click.argument("new_password")
+def change_password(username, old_password, new_password):
+    """Change password command."""
+    SecureVaultClient().change_password(username, old_password, new_password)
 
 if __name__ == "__main__":
-    # If no command-line arguments, run interactive mode; otherwise, we will use Fire.
-    if len(sys.argv) == 1:
-        interactive_mode()
-    else:
-        fire.Fire(SecureVaultCLI)
+    cli()
