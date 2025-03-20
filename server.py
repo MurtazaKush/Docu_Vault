@@ -119,3 +119,4 @@ def change_password_get(user:User_F,db: Session = Depends(get_db)):
 
 @app.post("/change_pass/",response_model=bool)
 def change_password_post(user:User_F,db: Session = Depends(get_db)):
+    pass
