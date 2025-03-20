@@ -167,7 +167,7 @@ def change_password_post(user:User_CP,db: Session = Depends(get_db)):
     db.commit()
     return True
 
-@app.get("/pbkey/",response_model=list[user_pbkey])
+@app.post("/pbkey/",response_model=list[user_pbkey])
 def get_pbkey(users:list[str],db: Session = Depends(get_db)):
     l=[]
     for username in users:
