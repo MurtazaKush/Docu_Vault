@@ -1,6 +1,5 @@
-import os
 import json
-from Crypto.Cipher import AES, DES
+from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 
 def aes_generate_key():
@@ -12,50 +11,29 @@ def aes_encrypt(plaintext, key):
     ciphertext = cipher.encrypt(plaintext)
     return ciphertext, iv
 
-def aes_decrypt(ciphertext, key, iv):
-    cipher = AES.new(key, AES.MODE_CTR, nonce=iv)
-    return cipher.decrypt(ciphertext)
+def bytes_to_bitstring(byte_data):
+    """Convert bytes to a bitstring representation ('0' and '1')."""
+    return ''.join(f"{byte:08b}" for byte in byte_data)
 
-ENCRYPTION_ALGORITHMS = {
-    "AES": {
-        "generate_key": aes_generate_key,
-        "encrypt": aes_encrypt,
-        "decrypt": aes_decrypt,
-    } 
-    #"DES": {
-    #    "generate_key": des_generate_key,
-    #    "encrypt": des_encrypt,
-    #    "decrypt": des_decrypt,
-    #}
-}
-
-def encrypt_doc(input_doc, output, algorithm="AES"):
+def encrypt_doc(input_doc, algorithm="AES"):
     """
-    Encrypts a document using the specified algorithm (AES or DES).
+    Encrypts a document and stores the encrypted file.
     """
-    algo = ENCRYPTION_ALGORITHMS[algorithm]
-    key = algo["generate_key"]()
+    key = aes_generate_key()
 
     with open(input_doc, 'rb') as f:
         plaintext = f.read()
 
-    ciphertext, iv = algo["encrypt"](plaintext, key)
+    ciphertext, iv = aes_encrypt(plaintext, key)
 
-    with open(output, 'wb') as f:
+    # Save the encrypted document
+    encrypted_filename = f"{input_doc}.enc"
+    with open(encrypted_filename, 'wb') as f:
         f.write(ciphertext)
 
-    encryption_metadata = {
-        "key": key.hex(),
-        "iv": iv.hex(),
-        "original_filename": os.path.basename(input_doc)
-    }
+    # Convert key + IV to bitstring (for later secret sharing)
+    key_iv_bitstring = bytes_to_bitstring(key + iv)
 
-    with open(output + "_meta.json", 'w') as f:
-        json.dump(encryption_metadata, f)
+    return encrypted_filename, key_iv_bitstring  # Return encrypted file name + key_iv bitstring
 
-    print(f"Encryption complete! Encrypted file saved as: {output}")
-    print(f"Metadata saved as: {output}_meta.json")
-
-
-alg = "AES"
-encrypt_doc("B.Tech CSE III B- L2.pdf", "ax_encrypted.bin", alg)
+# The decryption function should use get_secret() from SSS to reconstruct the key+IV and decrypt.

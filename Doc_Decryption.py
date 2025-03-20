@@ -1,25 +1,41 @@
 import json
-import os
 from Crypto.Cipher import AES
+from SSS import get_secret  # Importing SSS reconstruction function
 
-def decrypt_file(encrypted_file, metadata_file):
-    with open(metadata_file, 'r') as f:
-        metadata = json.load(f)
+def bitstring_to_bytes(bitstring):
+    """Convert a bitstring ('0' and '1') back to bytes."""
+    byte_array = bytearray()
+    for i in range(0, len(bitstring), 8):
+        byte_array.append(int(bitstring[i:i+8], 2))
+    return bytes(byte_array)
 
-    key = bytes.fromhex(metadata["key"])
-    iv = bytes.fromhex(metadata["iv"])
-    original_filename = metadata["original_filename"]
+def aes_decrypt(ciphertext, key, iv):
+    """Decrypts AES-CTR encrypted data."""
+    cipher = AES.new(key, AES.MODE_CTR, nonce=iv)
+    return cipher.decrypt(ciphertext)
 
-    with open(encrypted_file, 'rb') as f:
-        encrypted_data = f.read()
+def decrypt_doc(encrypted_filename, reconstructed_bitstring):
+    """
+    Decrypts a document using a reconstructed bitstring.
+    """
+    # Convert bitstring back to bytes
+    key_iv_bytes = bitstring_to_bytes(reconstructed_bitstring)
+    
+    # Extract AES key and IV
+    key = key_iv_bytes[:32]  # First 32 bytes = AES key
+    iv = key_iv_bytes[32:]   # Remaining 8 bytes = IV
 
-    cipher = AES.new(key, AES.MODE_CTR, nonce=iv)  # Using full IV as nonce
-    decrypted_data = cipher.decrypt(encrypted_data)
+    # Read encrypted data
+    with open(encrypted_filename, 'rb') as f:
+        ciphertext = f.read()
 
-    decrypted_file = f"decrypted_{original_filename}"
-    with open(decrypted_file, 'wb') as f:
-        f.write(decrypted_data)
+    # Decrypt
+    plaintext = aes_decrypt(ciphertext, key, iv)
 
-    print(f"Decryption complete! File saved as: {decrypted_file}")
+    # Save decrypted file
+    decrypted_filename = encrypted_filename.replace(".enc", "_decrypted")
+    with open(decrypted_filename, 'wb') as f:
+        f.write(plaintext)
 
-decrypt_file("ax_encrypted.bin", "ax_encrypted.bin_meta.json")
+    print(f"Decryption complete! File saved as: {decrypted_filename}")
+    return decrypted_filename
