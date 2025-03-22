@@ -1,5 +1,6 @@
 import hashlib
 import secrets  # Use secrets for cryptographic randomness
+import random
 from Crypto.PublicKey import RSA
 from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256, SHA512
