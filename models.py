@@ -98,6 +98,14 @@ class Upload_Doc(BaseModel):
     description: str=""
     l: int=0 #length of key+IV
 
+class reupload_Doc(BaseModel):
+    username: str=""
+    passhash: str=""
+    list_owners: list[user_secret]=[]
+    list_people: list[user_secret]=[]
+    req_id:int=0
+    l: int=0 #length of key+IV
+
 class Doc_User_View(BaseModel):
     filename : str=""
     description: str=""
@@ -147,3 +155,18 @@ class Doc_Fetch(BaseModel):
 class doc_secret(BaseModel):
     list_owners: list[user_secret]=[]
     list_people: list[user_secret]=[]
+
+class sign(BaseModel):
+    username: str=""
+    passhash: str=""
+    req_id:int=0
+    encrypted_secret:str=""
+
+class secret_Fetch(BaseModel):
+    username: str=""
+    passhash: str=""
+    req_id:int=0
+
+class O_P(BaseModel):
+    owners:list[str]=[]
+    people:list[str]=[]

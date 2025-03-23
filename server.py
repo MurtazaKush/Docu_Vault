@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, File, UploadFile
+from fastapi.responses import FileResponse
 from sqlmodel import Session, select, or_
 from sqlalchemy import func
 import os
@@ -239,6 +240,8 @@ def gen_myRequest_User_View(req: Requests,db: Session = Depends(get_db)):
     ans.req_time=req.req_time
     ans.req_type=req.req_type
     ans.status=req.status
+    ans.req_id=req.id
+    ans.doc_id=req.doc_id
     doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
     ans.filename=doc.filename
     ans.n=doc.n
@@ -253,6 +256,8 @@ def gen_Request_User_View(req: Requests,username:str,db: Session = Depends(get_d
     ans.description=req.description
     ans.req_time=req.req_time
     ans.req_type=req.req_type
+    ans.req_id=req.id
+    ans.doc_id=req.doc_id
     doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
     ans.filename=doc.filename
     p=db.exec(select(Permission).where(Permission.user_id==username,Permission.req_id==req.id)).one_or_none()
@@ -260,10 +265,7 @@ def gen_Request_User_View(req: Requests,username:str,db: Session = Depends(get_d
         ans.signed=False
     else:
         ans.signed=True
-    if req.status == Req_status.LIVE_PENDING or req.status == Req_status.LIVE_WAITING:
-        ans.live=1
-    else:
-        ans.live=0
+    ans.status=req.status
     return ans
 
 @app.post("/my_requests/",list[myRequest_User_View])
@@ -299,5 +301,128 @@ def get_other_requests(user: User_F,db: Session = Depends(get_db)):
             ans.append(a)
     return ans
 
+@app.post("/get_my_secret/",response_model=str)
+def get_secret(req:Doc_Fetch,db: Session = Depends(get_db)):
+    user=User_F(username=req.username,passhash=req.passhash)
+    if login_users(user)==False:
+        return None
+    sec=db.exec(select(people_doc).where(people_doc.user_id==req.username,people_doc.doc_id==req.doc_id)).one_or_none()
+    if sec is not None:
+        return sec.encrypted_secret
+    sec=db.exec(select(owner_doc).where(owner_doc.owner_id==req.username,owner_doc.doc_id==req.doc_id)).one_or_none()
+    if sec is None:
+        return ""
+    return sec.encrypted_secret
+#Get owner and people of document
+@app.post("/get_o_p/",response_model=O_P)
+def get_secret(req:Doc_Fetch,db: Session = Depends(get_db)):
+    user=User_F(username=req.username,passhash=req.passhash)
+    if login_users(user)==False:
+        return None
+    ans=O_P()
+    sec=db.exec(select(people_doc).where(people_doc.doc_id==req.doc_id)).all()
+    ans.people=[x.user_id for x in sec]
+    sec=db.exec(select(owner_doc).where(owner_doc.doc_id==req.doc_id)).all()
+    ans.owners=[x.owner_id for x in sec]
+    if user.username in ans.owners or user.username in ans.people:
+        return ans
+    return O_P()
+
+@app.post("/sign_req/",response_model=bool)
+def sign_req(s:sign,db: Session = Depends(get_db)):
+    user=User_F(username=s.username,passhash=s.passhash)
+    if login_users(user)==False:
+        return False
+    req=db.exec(select(Requests).where(Requests.id==s.req_id)).one_or_none()
+    if req is None:
+        return False
+    sec=db.exec(select(people_doc).where(people_doc.user_id==s.username,people_doc.doc_id==req.doc_id)).one_or_none()
+    p=Permission()
+    p.req_id=s.req_id
+    p.user_id=s.username
+    p.encrypted_secret=s.encrypted_secret
+    if sec is not None:
+        p.p_type=secret_type.PEOPLE
+        db.add(p)
+        db.commit()
+        return True
+    sec=db.exec(select(owner_doc).where(owner_doc.owner_id==s.username,owner_doc.doc_id==req.doc_id)).one_or_none()
+    if sec is not None:
+        p.p_type=secret_type.OWNER
+        db.add(p)
+        db.commit()
+        return True
+    return False
+
+@app.post("/get_file/",response_model=FileResponse)
+def fetch_file(req:Doc_Fetch,db: Session = Depends(get_db)):
+    user=User_F()
+    user.username=req.username
+    user.passhash=req.passhash
+    if login_users(user)==False:
+        return None
+    doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one_or_none()
+    if doc is None:
+        return None
+    return FileResponse(doc.file_path, filename=f"enc_{doc.filename}", media_type="application/octet-stream")
+
+@app.post("/get_secrets/",response_model=doc_secret)
+def fetch_secret(s_req:secret_Fetch,db: Session = Depends(get_db)):
+    update_req_status(db)
+    req=db.exec(select(Requests).where(Requests.id==s_req.req_id)).one_or_none()
+    if req is None or req.status!=Req_status.LIVE_PENDING:
+        return doc_secret()
+    p_list=db.exec(select(Permission).where(Permission.req_id==s_req.req_id)).all()
+    ans=doc_secret()
+    for p in p_list:
+        s=user_secret()
+        s.username=p.user_id
+        s.user_secret=p.encrypted_secret
+        if p.p_type==secret_type.OWNER:
+            ans.list_owners.append(s)
+        else:
+            ans.list_people.append(s)
+    req.status=Req_status.LIVE_WAITING_UPLOAD
+    db.add(req)
+    db.commit()
+    return ans
 
 
+@app.post("/reupload_doc/",response_model=bool)
+async def reupload_file(up_doc: reupload_Doc,file: UploadFile ,db: Session = Depends(get_db)):
+    req=db.exec(select(Requests).where(Requests.id==up_doc.req_id)).one_or_none()
+    if req is None or req.status!=Req_status.LIVE_WAITING_UPLOAD:
+        return False
+    u=User_F()
+    u.username=up_doc.username
+    u.passhash=up_doc.passhash
+    if login_users(u,db)==False:
+        return False
+    doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
+    for s in up_doc.list_owners:
+        ss=db.exec(select(owner_doc).where(owner_doc.doc_id==doc.id,owner_doc.owner_id==s.username)).one_or_none()
+        if ss is None:
+            return False
+        ss.encrypted_secret=s.user_secret
+        db.add(ss)
+    for s in up_doc.list_people:
+        ss=db.exec(select(people_doc).where(people_doc.doc_id==doc.id,people_doc.user_id==s.username)).one_or_none()
+        if ss is None:
+            return False
+        ss.encrypted_secret=s.user_secret
+        db.add(ss)
+    doc.l=up_doc.l
+    people=[x.user_id for x in db.exec(select(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.PEOPLE)).all()]
+    contents=await file.read()
+    with open(doc.file_path,"wb") as f:
+        f.write(contents)
+    with open(doc.log_file_path,"a") as f:
+        f.write(f"{doc.filename} Uploaded at {datetime.datetime.now(timezone.utc).isoformat()} by {up_doc.username}\n\
+                Edited: {"Yes" if req.req_type==Req_type.WRITE else "No"}\n\
+                Permitting People: {", ".join(people)}\n\
+                \n\n")
+    db.add(doc)
+    req.status=Req_status.EXPIRED_SUCCESSFUL
+    db.add(req)
+    db.commit()
+    return True
