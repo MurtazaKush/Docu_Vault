@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, File, UploadFile
 from sqlmodel import SQLModel, Field, create_engine, Session, select, or_
+from sqlalchemy import func
 import os
 from pydantic import BaseModel
 from enum import Enum
@@ -11,6 +12,7 @@ DATABASE_URL = f"sqlite:///{DATABASE_FILE}"
 SERVER_FS= "./Server"
 SERVER_FILE_STORE=SERVER_FS+"/files"
 SERVER_LOG_FILE_STORE=SERVER_FS+"/logs"
+MAX_VALID_TIME=24
 os.makedirs(SERVER_FS,exist_ok=True)
 os.makedirs(SERVER_FILE_STORE,exist_ok=True)
 os.makedirs(SERVER_LOG_FILE_STORE,exist_ok=True)
@@ -35,13 +37,13 @@ class Doc(SQLModel,table=True):
     accessible: bool
 
 class people_doc(SQLModel,table =True):
-    doc_id : int =Field(foreign_key='Doc.id')
-    user_id: str =Field(foreign_key='User.username')
+    doc_id : int =Field(foreign_key='doc.id')
+    user_id: str =Field(foreign_key='user.username')
     encrypted_secret: str 
 
 class owner_doc(SQLModel,table =True):
-    doc_id : int =Field(foreign_key='Doc.id')
-    owner_id: str =Field(foreign_key='User.username')
+    doc_id : int =Field(foreign_key='doc.id')
+    owner_id: str =Field(foreign_key='user.username')
     encrypted_secret: str 
 class Req_status(str,Enum):
     LIVE_PENDING="L_P"
@@ -49,18 +51,42 @@ class Req_status(str,Enum):
     EXPIRED_FAILED="E_F"
     LIVE_WAITING="L_W"
     LIVE_WAITING_UPLOAD="L_W_U"
+class Req_type(str,Enum):
+    READ="r"
+    WRITE="w"
+class secret_type(str,Enum):
+    OWNER='o'
+    PEOPLE='p'
 class Requests(SQLModel,table=True):
     id: int =Field(primary_key=True,default=None)
-    doc_id : int =Field(foreign_key='Doc.id')
-    user_id: str =Field(foreign_key='User.username')
+    doc_id : int =Field(foreign_key='doc.id')
+    user_id: str =Field(foreign_key='user.username')
     status: Req_status
     req_time: datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     valid_time: int # validity in no of hours
+    req_type: Req_type
+    description:str
 
+class Permission(SQLModel, table=True):
+    req_id:int =Field(foreign_key='requests.id')
+    user_id:int =Field(foreign_key='user.username')
+    encrypted_secret:str
+    p_type: secret_type
 
+class Req_F(BaseModel):
+    doc_id:int
+    user_id:str
+    passhash:str
+    description:str
+    valid_time:int
+    req_type: Req_type
 class User_F(BaseModel):
     username: str
     passhash: str
+class User_doc_req(BaseModel):
+    username: str
+    passhash: str
+    doc_id: int
 class secret_list(BaseModel):
     owner_secret: list[owner_doc]
     people_secret: list[people_doc]
@@ -86,6 +112,20 @@ class Upload_Doc(BaseModel):
     filename: str
     description: str
     l: int #length of key+IV
+
+class Doc_User_View(BaseModel):
+    filename : str
+    description: str
+    n:int
+    o:int
+    k:int
+    accessible: bool
+    id:int
+
+class Doc_User_Response(BaseModel):
+    people: list[Doc_User_View]
+    owner: list[Doc_User_View]
+
 # Create Tables if They Don't Exist
 def create_db_and_tables():
     if not os.path.exists(DATABASE_FILE):  # Only create tables if DB doesn't exist
@@ -167,6 +207,7 @@ def change_password_post(user:User_CP,db: Session = Depends(get_db)):
     db.commit()
     return True
 
+#Get public key of list of users
 @app.post("/pbkey/",response_model=list[user_pbkey])
 def get_pbkey(users:list[str],db: Session = Depends(get_db)):
     l=[]
@@ -180,6 +221,7 @@ def get_pbkey(users:list[str],db: Session = Depends(get_db)):
         l.append(o)
     return l
 
+#Upload a Doc for secure storage
 @app.post("/add_doc/",response_model=bool)
 async def add_doc(up_doc: Upload_Doc,file: UploadFile ,db: Session = Depends(get_db)):
     u=User_F()
@@ -226,3 +268,67 @@ async def add_doc(up_doc: Upload_Doc,file: UploadFile ,db: Session = Depends(get
         db.add(o_r)
         db.commit()
     return True
+
+def gen_Doc_User_View(d: Doc) -> Doc_User_View:
+    ans=Doc_User_View()
+    ans.accessible=d.accessible
+    ans.filename=d.filename
+    ans.description=d.description
+    ans.k=d.k
+    ans.o=d.o
+    ans.n=d.n
+    ans.id=d.id
+    return ans
+
+#Get list of Documents accessible to you
+@app.post("/my_docs/",response_model=Doc_User_Response)
+def get_my_docs(user: User_F,db: Session = Depends(get_db)):
+    if login_users(user,db)==False:
+        return []
+    my_docs=Doc_User_Response()
+    people_id =[x.doc_id for x in db.exec(select(people_doc).where(people_doc.user_id==user.username)).all()]
+    owner_id =[x.doc_id for x in db.exec(select(owner_doc).where(owner_doc.owner_id==user.username)).all()]
+    for id in people_id:
+        d=db.exec(select(Doc).where(Doc.id==id)).one()
+        my_docs.people.append(gen_Doc_User_View(d))
+    for id in owner_id:
+        d=db.exec(select(Doc).where(Doc.id==id)).one()
+        my_docs.people.append(gen_Doc_User_View(d))
+    return my_docs
+
+def update_req_status(db: Session = Depends(get_db)):
+    r=db.exec(select(Requests).where(or_(Requests.status==Req_status.LIVE_WAITING,Requests.status==Req_status.LIVE_PENDING))).all()
+    for req in r:
+        if req.req_time+datetime.timedelta(hours=req.valid_time) < datetime.datetime.now(datetime.UTC):
+            req.status=Req_status.EXPIRED_FAILED
+            db.add(req)
+    db.commit()
+    r=db.exec(select(Requests).where(Requests.status==Req_status.LIVE_WAITING)).all()
+    for req in r:
+        doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
+        if db.exec(select(func.count()).select_from(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.OWNER)) == doc.o and\
+            db.exec(select(func.count()).select_from(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.PEOPLE)) >= doc.k:
+            req.status=Req_status.LIVE_PENDING
+            db.add(req)
+    db.commit()
+    
+
+#Create a new read/write request
+@app.post("/create_request/",response_model=bool)
+def make_request(req:Req_F,db: Session = Depends(get_db)):
+    user=User_F()
+    user.username=req.user_id
+    user.passhash=req.passhash
+    if login_users(user,db)==False:
+        return False
+    doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one_or_none()
+    if doc is None or doc.accessible==False:
+        return False
+    people_id =[x.user_id for x in db.exec(select(people_doc).where(people_doc.doc_id==req.doc_id)).all()]
+    owner_id =[x.owner_id for x in db.exec(select(owner_doc).where(owner_doc.doc_id==req.doc_id)).all()]
+    if user.username not in people_id and user.username not in owner_id:
+        return False
+    req_record = Requests()
+    req_record.doc_id=req.doc_id
+    req_record.description=req.description
+    req_record.valid_time=req.valid_time
