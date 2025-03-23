@@ -6,9 +6,9 @@ import base64
 from rich.console import Console
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
-from hash_rsa import generate_hash, hash_to_rsa_key
-from Doc_encryption import encrypt_doc
-from SSS import spilt_secret
+from .hash_rsa import generate_hash, hash_to_rsa_key
+from .Doc_encryption import encrypt_doc
+from .SSS import spilt_secret
 
 BASE_URL = "http://127.0.0.1:8000"
 console = Console()

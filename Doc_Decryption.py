@@ -1,6 +1,6 @@
 import json
 from Crypto.Cipher import AES
-from SSS import get_secret  # Importing Shamir's Secret Sharing reconstruction function
+from .SSS import get_secret  # Importing Shamir's Secret Sharing reconstruction function
 
 def bitstring_to_bytes(bitstring):
     """Convert a bitstring ('0' and '1') back to bytes."""
