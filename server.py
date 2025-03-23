@@ -176,6 +176,12 @@ def update_req_status(db: Session = Depends(get_db)):
     for req in r:
         if req.req_time+datetime.timedelta(hours=req.valid_time) < datetime.datetime.now(datetime.UTC):
             req.status=Req_status.EXPIRED_FAILED
+            doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
+            p=db.exec(select(Permission).where(Permission.req_id==req.id)).all()
+            for pp in p:
+                db.delete(pp)
+            doc.accessible=True
+            db.add(doc)
             db.add(req)
     db.commit()
     r=db.exec(select(Requests).where(Requests.status==Req_status.LIVE_WAITING)).all()
@@ -186,7 +192,6 @@ def update_req_status(db: Session = Depends(get_db)):
             req.status=Req_status.LIVE_PENDING
             db.add(req)
     db.commit()
-    
 
 #Create a new read/write request
 @app.post("/create_request/",response_model=bool)
@@ -207,3 +212,92 @@ def make_request(req:Req_F,db: Session = Depends(get_db)):
     req_record.doc_id=req.doc_id
     req_record.description=req.description
     req_record.valid_time=req.valid_time
+    req_record.req_type=req.req_type
+    req_record.status=Req_status.LIVE_WAITING
+    req_record.user_id=req.user_id
+    db.add(req_record)
+    doc.accessible=False
+    db.add(doc)
+    db.commit()
+    db.refresh(req_record)
+    p=Permission()
+    p.req_id=req_record.id
+    p.user_id=req_record.user_id
+    if p.user_id in owner_id:
+        p.p_type=secret_type.OWNER
+        p.encrypted_secret=db.exec(select(owner_doc).where(owner_doc.doc_id==req.doc_id,owner_doc.owner_id==req.user_id)).one().encrypted_secret
+    else:
+        p.p_type=secret_type.PEOPLE
+        p.encrypted_secret=db.exec(select(people_doc).where(people_doc.doc_id==req.doc_id,people_doc.user_id==req.user_id)).one().encrypted_secret
+    db.add(p)
+    db.commit()
+    return True
+
+def gen_myRequest_User_View(req: Requests,db: Session = Depends(get_db)):
+    ans=myRequest_User_View()
+    ans.description=req.description
+    ans.req_time=req.req_time
+    ans.req_type=req.req_type
+    ans.status=req.status
+    doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
+    ans.filename=doc.filename
+    ans.n=doc.n
+    ans.k=doc.k
+    ans.o=ans.o
+    ans.s_k= [x.user_id for x in db.exec(select(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.PEOPLE)).all()]
+    ans.s_o= [x.user_id for x in db.exec(select(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.OWNER)).all()]
+    return ans
+
+def gen_Request_User_View(req: Requests,username:str,db: Session = Depends(get_db)) -> Request_User_View:
+    ans=Request_User_View()
+    ans.description=req.description
+    ans.req_time=req.req_time
+    ans.req_type=req.req_type
+    doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
+    ans.filename=doc.filename
+    p=db.exec(select(Permission).where(Permission.user_id==username,Permission.req_id==req.id)).one_or_none()
+    if p is None:
+        ans.signed=False
+    else:
+        ans.signed=True
+    if req.status == Req_status.LIVE_PENDING or req.status == Req_status.LIVE_WAITING:
+        ans.live=1
+    else:
+        ans.live=0
+    return ans
+
+@app.post("/my_requests/",list[myRequest_User_View])
+def get_my_requests(user: User_F,db: Session = Depends(get_db)):
+    if login_users(user)==False:
+        return []
+    update_req_status(db)
+    ans=[]
+    reqs=db.exec(select(Requests).where(Requests.user_id==user.username)).all()
+    for req in reqs:
+        ans.append(gen_myRequest_User_View(req,db))
+    return ans
+
+@app.post("/other_requests/",response_model=list[Request_User_View])
+def get_other_requests(user: User_F,db: Session = Depends(get_db)):
+    if login_users(user)==False:
+        return []
+    update_req_status(db)
+    ans=[]
+    docs_o=[x.doc_id for x in db.exec(select(owner_doc).where(owner_doc.owner_id==user.username)).all()]
+    docs_p=[x.doc_id for x in db.exec(select(people_doc).where(people_doc.user_id==user.username)).all()]
+    for d in docs_o:
+        r=db.exec(select(Requests).where(Requests.doc_id==d)).all()
+        for req in r:
+            a=gen_Request_User_View(req,db)
+            a.user_type = secret_type.OWNER
+            ans.append(a)
+    for d in docs_p:
+        r=db.exec(select(Requests).where(Requests.doc_id==d)).all()
+        for req in r:
+            a=gen_Request_User_View(req,db)
+            a.user_type = secret_type.PEOPLE
+            ans.append(a)
+    return ans
+
+
+

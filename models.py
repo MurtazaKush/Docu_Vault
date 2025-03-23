@@ -109,3 +109,28 @@ class Doc_User_View(BaseModel):
 class Doc_User_Response(BaseModel):
     people: list[Doc_User_View]
     owner: list[Doc_User_View]
+
+class myRequest_User_View(BaseModel):
+    s_o: list[str] # no of owners that signed
+    s_k: list[str] # no of people that signed
+    o: int
+    k: int
+    n: int
+    description: str
+    filename: str
+    req_time: datetime
+    req_type:Req_type
+    valid_time: int
+    status:Req_status
+
+class Request_User_View(BaseModel):
+    description: str
+    filename: str
+    req_time: datetime
+    req_type:Req_type
+    valid_time: int
+    user_id: str
+    signed: bool
+    live:bool
+    user_type: secret_type
+
