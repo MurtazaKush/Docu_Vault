@@ -365,6 +365,18 @@ def fetch_file(req:Doc_Fetch,db: Session = Depends(get_db)):
         return None
     return FileResponse(doc.file_path, filename=f"enc_{doc.filename}", media_type="application/octet-stream")
 
+@app.post("/get_log_file/",response_model=FileResponse)
+def fetch_file(req:Doc_Fetch,db: Session = Depends(get_db)):
+    user=User_F()
+    user.username=req.username
+    user.passhash=req.passhash
+    if login_users(user)==False:
+        return None
+    doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one_or_none()
+    if doc is None:
+        return None
+    return FileResponse(doc.log_file_path, filename=f"log_{doc.filename}", media_type="application/octet-stream")
+
 @app.post("/get_secrets/",response_model=doc_secret)
 def fetch_secret(s_req:secret_Fetch,db: Session = Depends(get_db)):
     update_req_status(db)
