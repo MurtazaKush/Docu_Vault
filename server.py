@@ -24,16 +24,15 @@ def on_startup():
     create_db_and_tables()
 
 # Route to Create a New User
-@app.post("/signup/", response_model=User)
+@app.post("/signup/", response_model=bool)
 def create_user(user: User, db: Session = Depends(get_db)):
     ruser=db.exec(select(User).where(User.username==user.username)).one_or_none()
     if ruser:
-        user.username="!"+user.username
-        return user
+        return False
     db.add(user)
     db.commit()
     db.refresh(user)
-    return user
+    return True
 
 # Login route for user
 @app.post("/login/", response_model=bool)
