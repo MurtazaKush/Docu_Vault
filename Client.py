@@ -71,7 +71,7 @@ class SecureVaultClient:
                 secret=key_iv_bits,
                 no_of_owners=len(owners),
                 k=k,
-                n=len(people)  # Match server's flawed logic
+                n=len(people) + len(owners) # Match server's flawed logic
             )
 
             # Get public keys for all participants
