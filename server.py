@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, File, UploadFile
+from contextlib import asynccontextmanager
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select, or_
 from sqlalchemy import func
@@ -18,11 +19,13 @@ os.makedirs(SERVER_LOG_FILE_STORE,exist_ok=True)
 # Initialize FastAPI App
 app = FastAPI()
 
-# Run DB Setup on Startup (Only Creates Tables If Needed)
-@app.on_event("startup")
-def on_startup():
-    create_db_and_tables()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Code to run before the application starts
+    create_db_and_tables()
+    yield
+app = FastAPI(lifespan=lifespan)
 # Route to Create a New User
 @app.post("/signup/", response_model=bool)
 def create_user(user: User, db: Session = Depends(get_db)):

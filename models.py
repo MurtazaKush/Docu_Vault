@@ -47,7 +47,7 @@ class Requests(SQLModel,table=True):
     user_id: str =Field(foreign_key='user.username',default="")
     status: Req_status=Req_status.LIVE_WAITING
     req_time: datetime = Field(sa_column=Column(TIMESTAMP(timezone=True),
-                        nullable=False, server_default=text("now()")))
+                        nullable=False, server_default=text("CURRENT_TIMESTAMP")))
     valid_time: int =0# validity in no of hours
     req_type: Req_type=Req_type.READ
     description:str=""
