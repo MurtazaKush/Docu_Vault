@@ -267,7 +267,7 @@ def gen_Request_User_View(req: Requests,username:str,db: Session = Depends(get_d
     ans.status=req.status
     return ans
 
-@app.post("/my_requests/",list[myRequest_User_View])
+@app.post("/my_requests/",response_model=list[myRequest_User_View])
 def get_my_requests(user: User_F,db: Session = Depends(get_db)):
     if login_users(user)==False:
         return []
@@ -353,7 +353,7 @@ def sign_req(s:sign,db: Session = Depends(get_db)):
         return True
     return False
 
-@app.post("/get_file/",response_model=FileResponse)
+@app.post("/get_file/",response_model=None)
 def fetch_file(req:Doc_Fetch,db: Session = Depends(get_db)):
     user=User_F()
     user.username=req.username
@@ -365,7 +365,7 @@ def fetch_file(req:Doc_Fetch,db: Session = Depends(get_db)):
         return None
     return FileResponse(doc.file_path, filename=f"enc_{doc.filename}", media_type="application/octet-stream")
 
-@app.post("/get_log_file/",response_model=FileResponse)
+@app.post("/get_log_file/",response_model=None)
 def fetch_file(req:Doc_Fetch,db: Session = Depends(get_db)):
     user=User_F()
     user.username=req.username
