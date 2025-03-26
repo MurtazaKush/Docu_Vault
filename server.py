@@ -171,7 +171,7 @@ def get_my_docs(user: User_F,db: Session = Depends(get_db)):
         my_docs.people.append(gen_Doc_User_View(d))
     for id in owner_id:
         d=db.exec(select(Doc).where(Doc.id==id)).one()
-        my_docs.people.append(gen_Doc_User_View(d))
+        my_docs.owner.append(gen_Doc_User_View(d))
     return my_docs
 
 def update_req_status(db: Session = Depends(get_db)):
