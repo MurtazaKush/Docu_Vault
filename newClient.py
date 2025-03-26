@@ -219,7 +219,6 @@ def reupload(req:myRequest_User_View,dfp=None):
             data={"up_doc": json.dumps(req_B.model_dump())},
             files={"file": (efp,f,'application/octet-stream')} # check
         )
-        os.remove(efp)
         if response.json()==True:
             print("File Reuploaded Successfully")
         else:
