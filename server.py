@@ -112,7 +112,7 @@ async def add_doc(up_doc: Upload_Doc,file: UploadFile ,db: Session = Depends(get
     doc.description=up_doc.description
     doc.k=up_doc.k
     doc.o=len(up_doc.list_owners)
-    doc.n=len(up_doc.list_people)+doc.n
+    doc.n=len(up_doc.list_people)+doc.o
     doc.l=up_doc.l
     doc.accessible=True
     db.add(doc)
@@ -369,7 +369,7 @@ def fetch_file(req:Doc_Fetch,db: Session = Depends(get_db)):
     return FileResponse(doc.file_path, filename=f"enc_{doc.filename}", media_type="application/octet-stream")
 
 @app.post("/get_log_file/",response_model=None)
-def fetch_file(req:Doc_Fetch,db: Session = Depends(get_db)):
+def fetch_log_file(req:Doc_Fetch,db: Session = Depends(get_db)):
     user=User_F()
     user.username=req.username
     user.passhash=req.passhash
