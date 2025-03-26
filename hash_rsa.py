@@ -1,14 +1,13 @@
 import hashlib
-import secrets  # Use secrets for cryptographic randomness
+import secrets
 import random
 from Crypto.PublicKey import RSA
-from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256, SHA512
 from Crypto.Util.number import getPrime
 
 # ---- Hashing Configuration ----
 Algo_change = {
-    "hash_algo": "SHA-256",  # Change to "SHA-512" for testing later
+    "hash_algo": "SHA-256",
     "rsa_bits": 2048,
 }
 
@@ -51,35 +50,3 @@ def hash_to_rsa_key(username, password):
 
     key = RSA.construct((p * q, 65537, pow(65537, -1, (p - 1) * (q - 1)), p, q))
     return key, key.publickey()
-
-# ---- RSA Signature Functions ----
-def generate_signature(private_key, message):
-    """Generate a digital signature using RSA."""
-    h = SHA256.new(message.encode()) if Algo_change["hash_algo"] == "SHA-256" else SHA512.new(message.encode())
-    return pkcs1_15.new(private_key).sign(h)
-
-def verify_signature(public_key, message, signature):
-    """Verify a digital signature."""
-    h = SHA256.new(message.encode()) if Algo_change["hash_algo"] == "SHA-256" else SHA512.new(message.encode())
-    try:
-        pkcs1_15.new(public_key).verify(h, signature)
-        return True
-    except (ValueError, TypeError):
-        return False
-
-# ---- Execution ----
-if __name__ == "__main__":
-    username = input("Enter username: ")
-    password = input("Enter password: ")
-
-    print("Generating RSA key pair...")
-    private_key, public_key = hash_to_rsa_key(username, password)
-
-    # Test Signature
-    test_message = "RSA Key Verification Test"
-    signature = generate_signature(private_key, test_message)
-
-    if verify_signature(public_key, test_message, signature):
-        print("RSA Key Verified Successfully!")
-    else:
-        print("RSA Key Verification Failed!")
