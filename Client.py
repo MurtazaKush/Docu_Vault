@@ -144,31 +144,42 @@ class SecureVaultClient:
 
     def download_document(self, doc_id: int) -> bool:
         try:
+            # First create a read request
+            if not self.create_request(doc_id, "read", 24):
+                console.print("[red]Could not create access request![/red]")
+                return False
+
+            # Get request ID for our new request
             docs_request = User_F(
                 username=self.current_user[0],
                 passhash=generate_hash(self.current_user[1])
             )
-            docs_response = self.session.post(
-                f"{BASE_URL}/my_docs/",
+            response = self._make_request(
+                'POST',
+                f"{BASE_URL}/my_requests/",
                 data=docs_request.model_dump_json()
             )
-
-            if not docs_response.ok:
-                console.print("[red]Metadata fetch failed![/red]")
+            if not response:
                 return False
 
-            docs_data = Doc_User_Response(**docs_response.json())
-            target_doc = next(
-                (doc for doc in docs_data.owner + docs_data.people 
-                 if doc.id == doc_id), None # check 
+            requests_data = [myRequest_User_View(**item) for item in response.json()]
+            target_request = next(
+                (req for req in requests_data 
+                if req.doc_id == doc_id and req.status == Req_status.LIVE_PENDING), None
             )
 
+            if not target_request:
+                console.print("[red]No approved request found![/red]")
+                return False
+
+            # Fetch the actual file
             file_request = Doc_Fetch(
                 username=self.current_user[0],
                 passhash=generate_hash(self.current_user[1]),
                 doc_id=str(doc_id)
             )
-            file_response = self.session.post(
+            file_response = self._make_request(
+                'POST',
                 f"{BASE_URL}/get_file/",
                 data=file_request.model_dump_json(),
                 stream=True
@@ -179,26 +190,35 @@ class SecureVaultClient:
                 for chunk in file_response.iter_content(1024):
                     f.write(chunk)
 
+            # Get secrets using CORRECT req_id
             secrets_request = secret_Fetch(
                 username=self.current_user[0],
                 passhash=generate_hash(self.current_user[1]),
-                req_id=doc_id
+                req_id=target_request.req_id  # Use actual request ID
             )
-            secrets_response = self.session.post(
+            secrets_response = self._make_request(
+                'POST',
                 f"{BASE_URL}/get_secrets/",
                 data=secrets_request.model_dump_json()
             )
+
+            if not secrets_response:
+                return False
 
             shares_data = doc_secret(**secrets_response.json())
             sss_shares = {
                 "owner": [s.user_secret for s in shares_data.list_owners],
                 "people": [s.user_secret for s in shares_data.list_people],
-                "k": target_doc.k,
-                "o": target_doc.o,
-                "l": target_doc.l
+                "k": target_request.k,
+                "o": target_request.o,
+                "l": target_request.l  # Get l from request data
             }
 
             reconstructed = get_secret(sss_shares)
+            if not reconstructed:
+                console.print("[red]Failed to reconstruct secret![/red]")
+                return False
+
             key_iv_bytes = bitstring_to_bytes(reconstructed)
             key = key_iv_bytes[:32]
             iv = key_iv_bytes[32:40]
@@ -210,7 +230,7 @@ class SecureVaultClient:
         except Exception as e:
             console.print(f"[red]Download failed: {str(e)}[/red]")
             return False
-
+    
     def create_request(self, doc_id: int, req_type: str, valid_hours: int) -> bool:
         try:
             request_data = Req_F(
