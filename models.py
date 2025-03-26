@@ -150,7 +150,7 @@ class Request_User_View(BaseModel):
 class Doc_Fetch(BaseModel):
     username: str=""
     passhash: str=""
-    doc_id: str=""
+    doc_id: int=0
 
 class doc_secret(BaseModel):
     list_owners: list[user_secret]=[]
