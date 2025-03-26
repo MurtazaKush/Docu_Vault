@@ -8,7 +8,7 @@ from Crypto.Util.number import getPrime
 # ---- Hashing Configuration ----
 Algo_change = {
     "hash_algo": "SHA-256",
-    "rsa_bits": 2048,
+    "rsa_bits": 4096,
 }
 
 # ---- Hashing Functions ----
