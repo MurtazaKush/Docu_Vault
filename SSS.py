@@ -97,11 +97,11 @@ def get_secret(k_secrets):
             t=mat[i][i]
         for j in range(len(mat[0])):
             mat[i][j]//=t
-        for j in range(i+1,len(mat[0])):
+        for j in range(i+1,len(mat[0])-1):
             t=mat[j][i]
             for k in range(len(mat[0])):
                 mat[j][k]-=t*mat[i][k]
-    for i in range(1,len(mat[0])):
+    for i in range(1,len(mat[0])-1):
         for j in range(0,i):
             t=mat[j][i]
             for k in range(0,len(mat[0])):
@@ -114,7 +114,10 @@ def get_secret(k_secrets):
 if __name__=='__main__':
     for i in range(1,32):
         key="0101001010101111"*i
-        extracted_key=(get_secret(spilt_secret(key,6,150,200)))
+        k=200-8
+        x=spilt_secret(key,6,k,200)
+        x["people"]=x['people'][0:k]
+        extracted_key=(get_secret(x))
         if(key==extracted_key):
             print('Success',len(key))
         else:
