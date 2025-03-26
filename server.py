@@ -16,9 +16,6 @@ os.makedirs(SERVER_FS,exist_ok=True)
 os.makedirs(SERVER_FILE_STORE,exist_ok=True)
 os.makedirs(SERVER_LOG_FILE_STORE,exist_ok=True)
 
-# Initialize FastAPI App
-app = FastAPI()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -248,7 +245,7 @@ def gen_myRequest_User_View(req: Requests,db: Session = Depends(get_db)):
     ans.filename=doc.filename
     ans.n=doc.n
     ans.k=doc.k
-    ans.o=ans.o
+    ans.o=doc.o
     ans.s_k= [x.user_id for x in db.exec(select(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.PEOPLE)).all()]
     ans.s_o= [x.user_id for x in db.exec(select(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.OWNER)).all()]
     return ans
@@ -260,6 +257,7 @@ def gen_Request_User_View(req: Requests,username:str,db: Session = Depends(get_d
     ans.req_type=req.req_type
     ans.req_id=req.id
     ans.doc_id=req.doc_id
+    ans.user_id=req.user_id
     doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
     ans.filename=doc.filename
     p=db.exec(select(Permission).where(Permission.user_id==username,Permission.req_id==req.id)).one_or_none()
@@ -272,7 +270,7 @@ def gen_Request_User_View(req: Requests,username:str,db: Session = Depends(get_d
 
 @app.post("/my_requests/",response_model=list[myRequest_User_View])
 def get_my_requests(user: User_F,db: Session = Depends(get_db)):
-    if login_users(user)==False:
+    if login_users(user,db)==False:
         return []
     update_req_status(db)
     ans=[]
@@ -283,7 +281,7 @@ def get_my_requests(user: User_F,db: Session = Depends(get_db)):
 
 @app.post("/other_requests/",response_model=list[Request_User_View])
 def get_other_requests(user: User_F,db: Session = Depends(get_db)):
-    if login_users(user)==False:
+    if login_users(user,db)==False:
         return []
     update_req_status(db)
     ans=[]
@@ -306,7 +304,7 @@ def get_other_requests(user: User_F,db: Session = Depends(get_db)):
 @app.post("/get_my_secret/",response_model=str)
 def get_secret(req:Doc_Fetch,db: Session = Depends(get_db)):
     user=User_F(username=req.username,passhash=req.passhash)
-    if login_users(user)==False:
+    if login_users(user,db)==False:
         return None
     sec=db.exec(select(people_doc).where(people_doc.user_id==req.username,people_doc.doc_id==req.doc_id)).one_or_none()
     if sec is not None:
@@ -319,7 +317,7 @@ def get_secret(req:Doc_Fetch,db: Session = Depends(get_db)):
 @app.post("/get_o_p/",response_model=O_P)
 def get_secret(req:Doc_Fetch,db: Session = Depends(get_db)):
     user=User_F(username=req.username,passhash=req.passhash)
-    if login_users(user)==False:
+    if login_users(user,db)==False:
         return None
     ans=O_P()
     sec=db.exec(select(people_doc).where(people_doc.doc_id==req.doc_id)).all()
@@ -333,7 +331,7 @@ def get_secret(req:Doc_Fetch,db: Session = Depends(get_db)):
 @app.post("/sign_req/",response_model=bool)
 def sign_req(s:sign,db: Session = Depends(get_db)):
     user=User_F(username=s.username,passhash=s.passhash)
-    if login_users(user)==False:
+    if login_users(user,db)==False:
         return False
     req=db.exec(select(Requests).where(Requests.id==s.req_id)).one_or_none()
     if req is None:
@@ -361,7 +359,7 @@ def fetch_file(req:Doc_Fetch,db: Session = Depends(get_db)):
     user=User_F()
     user.username=req.username
     user.passhash=req.passhash
-    if login_users(user)==False:
+    if login_users(user,db)==False:
         return None
     doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one_or_none()
     if doc is None:
@@ -373,7 +371,7 @@ def fetch_log_file(req:Doc_Fetch,db: Session = Depends(get_db)):
     user=User_F()
     user.username=req.username
     user.passhash=req.passhash
-    if login_users(user)==False:
+    if login_users(user,db)==False:
         return None
     doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one_or_none()
     if doc is None:
