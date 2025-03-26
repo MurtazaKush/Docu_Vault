@@ -1,16 +1,17 @@
-from fastapi import FastAPI, HTTPException, Depends, File, UploadFile
+from fastapi import FastAPI,Form, HTTPException, Depends, File, UploadFile
 from contextlib import asynccontextmanager
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select, or_
 from sqlalchemy import func
 import os
 import datetime
-from datetime import timezone
+from datetime import timezone, timedelta, UTC
 from .models import *
 from .database import *
-SERVER_FS= "./Server"
-SERVER_FILE_STORE=SERVER_FS+"/files"
-SERVER_LOG_FILE_STORE=SERVER_FS+"/logs"
+import json
+SERVER_FS= ".\\Server"
+SERVER_FILE_STORE=SERVER_FS+"\\files"
+SERVER_LOG_FILE_STORE=SERVER_FS+"\\logs"
 MAX_VALID_TIME=24
 os.makedirs(SERVER_FS,exist_ok=True)
 os.makedirs(SERVER_FILE_STORE,exist_ok=True)
@@ -98,51 +99,61 @@ def get_pbkey(users:list[str],db: Session = Depends(get_db)):
 
 #Upload a Doc for secure storage
 @app.post("/add_doc/",response_model=bool)
-async def add_doc(up_doc: Upload_Doc,file: UploadFile ,db: Session = Depends(get_db)):
-    u=User_F()
-    u.username=up_doc.username
-    u.passhash=up_doc.passhash
-    if login_users(u,db)==False:
+async def add_doc(up_doc: str = Form(...),file: UploadFile =File(...),db: Session = Depends(get_db)):
+    try:
+        up_doc = json.loads(up_doc)  # Convert JSON string to a Python dictionary
+        up_doc = Upload_Doc(**up_doc)  # Convert dict to Pydantic model
+
+        # Now, `up_doc` should contain proper values.
+        #print(up_doc)
+        u=User_F(username=up_doc.username,passhash=up_doc.passhash)
+        print(up_doc.model_dump())
+        if login_users(u,db)==False:
+            return False
+        doc = Doc()
+        doc.filename=up_doc.filename
+        doc.description=up_doc.description
+        doc.k=up_doc.k
+        doc.o=len(up_doc.list_owners)
+        doc.n=len(up_doc.list_people)+doc.o
+        doc.l=up_doc.l
+        doc.accessible=True
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+        doc.file_path = os.path.join(SERVER_FILE_STORE, str(doc.id))
+        doc.log_file_path = os.path.join(SERVER_LOG_FILE_STORE, f"{doc.id}.log")
+        print(doc.file_path,doc.log_file_path)
+        file.file.seek(0)
+        contents=await file.read()
+        with open(doc.file_path,"wb") as f:
+            f.write(contents)
+        with open(doc.log_file_path,"w") as f:
+            f.write(f"{doc.filename} created at {datetime.now(timezone.utc).isoformat()} by {up_doc.username}\n\
+                    Owners: {", ".join([x.username for x in up_doc.list_owners])}\n\
+                    People: {", ".join([x.username for x in up_doc.list_people])}\n\
+                    k: {up_doc.k}\n\
+                    Description: {up_doc.description}\n\
+                    \n\n")
+        db.commit()
+        for p in up_doc.list_people:
+            p_r=people_doc()
+            p_r.doc_id=doc.id
+            p_r.user_id=p.username
+            p_r.encrypted_secret=p.user_secret
+            db.add(p_r)
+            db.commit()
+        for o in up_doc.list_owners:
+            o_r=owner_doc()
+            o_r.doc_id=doc.id
+            o_r.owner_id=o.username
+            o_r.encrypted_secret=o.user_secret
+            db.add(o_r)
+            db.commit()
+        return True
+    except Exception as e:
+        print(f"Error: {e}",flush=True)
         return False
-    doc = Doc()
-    doc.filename=up_doc.filename
-    doc.description=up_doc.description
-    doc.k=up_doc.k
-    doc.o=len(up_doc.list_owners)
-    doc.n=len(up_doc.list_people)+doc.o
-    doc.l=up_doc.l
-    doc.accessible=True
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
-    doc.file_path=SERVER_FILE_STORE+f"/{doc.id}"
-    doc.log_file_path=SERVER_LOG_FILE_STORE+f"/{doc.id}.log"
-    contents=await file.read()
-    with open(doc.file_path,"wb") as f:
-        f.write(contents)
-    with open(doc.log_file_path,"w") as f:
-        f.write(f"{doc.filename} created at {datetime.datetime.now(timezone.utc).isoformat()} by {up_doc.username}\n\
-                Owners: {", ".join([x.username for x in up_doc.list_owners])}\n\
-                People: {", ".join([x.username for x in up_doc.list_people])}\n\
-                k: {up_doc.k}\n\
-                Description: {up_doc.description}\n\
-                \n\n")
-    db.commit()
-    for p in up_doc.list_people:
-        p_r=people_doc()
-        p_r.doc_id=doc.id
-        p_r.user_id=p.username
-        p_r.encrypted_secret=p.user_secret
-        db.add(p_r)
-        db.commit()
-    for o in up_doc.list_owners:
-        o_r=owner_doc()
-        o_r.doc_id=doc.id
-        o_r.owner_id=o.username
-        o_r.encrypted_secret=o.user_secret
-        db.add(o_r)
-        db.commit()
-    return True
 
 def gen_Doc_User_View(d: Doc) -> Doc_User_View:
     ans=Doc_User_View()
@@ -174,7 +185,8 @@ def get_my_docs(user: User_F,db: Session = Depends(get_db)):
 def update_req_status(db: Session = Depends(get_db)):
     r=db.exec(select(Requests).where(or_(Requests.status==Req_status.LIVE_WAITING,Requests.status==Req_status.LIVE_PENDING))).all()
     for req in r:
-        if req.req_time+datetime.timedelta(hours=req.valid_time) < datetime.datetime.now(datetime.UTC):
+        req_time_aware = req.req_time.replace(tzinfo=timezone.utc) if req.req_time.tzinfo is None else req.req_time
+        if req_time_aware + timedelta(hours=req.valid_time) < datetime.now(timezone.utc):
             req.status=Req_status.EXPIRED_FAILED
             doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
             p=db.exec(select(Permission).where(Permission.req_id==req.id)).all()
@@ -199,6 +211,7 @@ def make_request(req:Req_F,db: Session = Depends(get_db)):
     user=User_F()
     user.username=req.user_id
     user.passhash=req.passhash
+    print(req)
     if login_users(user,db)==False:
         return False
     doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one_or_none()
@@ -215,11 +228,13 @@ def make_request(req:Req_F,db: Session = Depends(get_db)):
     req_record.req_type=req.req_type
     req_record.status=Req_status.LIVE_WAITING
     req_record.user_id=req.user_id
+    print(req_record)
     db.add(req_record)
     doc.accessible=False
     db.add(doc)
     db.commit()
     db.refresh(req_record)
+    print(req_record)
     p=Permission()
     p.req_id=req_record.id
     p.user_id=req_record.user_id
@@ -236,6 +251,7 @@ def make_request(req:Req_F,db: Session = Depends(get_db)):
 def gen_myRequest_User_View(req: Requests,db: Session = Depends(get_db)):
     ans=myRequest_User_View()
     ans.description=req.description
+    ans.valid_time=req.valid_time
     ans.req_time=req.req_time
     ans.req_type=req.req_type
     ans.status=req.status
@@ -254,6 +270,7 @@ def gen_Request_User_View(req: Requests,username:str,db: Session = Depends(get_d
     ans=Request_User_View()
     ans.description=req.description
     ans.req_time=req.req_time
+    ans.valid_time=req.valid_time
     ans.req_type=req.req_type
     ans.req_id=req.id
     ans.doc_id=req.doc_id
@@ -277,6 +294,7 @@ def get_my_requests(user: User_F,db: Session = Depends(get_db)):
     reqs=db.exec(select(Requests).where(Requests.user_id==user.username)).all()
     for req in reqs:
         ans.append(gen_myRequest_User_View(req,db))
+    print(ans)
     return ans
 
 @app.post("/other_requests/",response_model=list[Request_User_View])
@@ -290,13 +308,13 @@ def get_other_requests(user: User_F,db: Session = Depends(get_db)):
     for d in docs_o:
         r=db.exec(select(Requests).where(Requests.doc_id==d)).all()
         for req in r:
-            a=gen_Request_User_View(req,db)
+            a=gen_Request_User_View(req,user.username,db)
             a.user_type = secret_type.OWNER
             ans.append(a)
     for d in docs_p:
         r=db.exec(select(Requests).where(Requests.doc_id==d)).all()
         for req in r:
-            a=gen_Request_User_View(req,db)
+            a=gen_Request_User_View(req,user.username,db)
             a.user_type = secret_type.PEOPLE
             ans.append(a)
     return ans
@@ -305,7 +323,7 @@ def get_other_requests(user: User_F,db: Session = Depends(get_db)):
 def get_secret(req:Doc_Fetch,db: Session = Depends(get_db)):
     user=User_F(username=req.username,passhash=req.passhash)
     if login_users(user,db)==False:
-        return None
+        return ""
     sec=db.exec(select(people_doc).where(people_doc.user_id==req.username,people_doc.doc_id==req.doc_id)).one_or_none()
     if sec is not None:
         return sec.encrypted_secret
