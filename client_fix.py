@@ -58,9 +58,9 @@ class SecureVaultClient:
             enc_file, key_iv_bits = encrypt_doc(file_path)
             sss_shares = spilt_secret(key_iv_bits, len(owners), k, len(people)+len(owners))
             
-            # Extract only secret parts (first element before comma)
-            owner_secrets = [s.split(',')[0] for s in sss_shares['owner']]
-            people_secrets = [s.split(',')[0] for s in sss_shares['people']]
+            # CORRECT: Use the full share strings (secret + positions)
+            owner_secrets = sss_shares['owner']
+            people_secrets = sss_shares['people']
             
             pb_keys = self.get_pbkeys(owners + people)
             if len(pb_keys) != len(owners + people):
