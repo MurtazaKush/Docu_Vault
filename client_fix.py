@@ -8,11 +8,11 @@ from rich.table import Table
 from rich.prompt import Prompt, Confirm
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
-from models import *
-from hash_rsa import generate_hash, hash_to_rsa_key
-from Doc_encryption import encrypt_doc
-from SSS import spilt_secret, get_secret
-from Doc_Decryption import decrypt_doc, bitstring_to_bytes
+from .models import *
+from .hash_rsa import generate_hash, hash_to_rsa_key
+from .Doc_encryption import encrypt_doc
+from .SSS import spilt_secret, get_secret
+from .Doc_Decryption import decrypt_doc, bitstring_to_bytes
 
 BASE_URL = "http://127.0.0.1:8000"
 console = Console()
