@@ -6,11 +6,11 @@ from rich.console import Console
 from rich.table import Table
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
-from models import *
-from hash_rsa import generate_hash, hash_to_rsa_key
-from Doc_encryption import encrypt_doc
-from SSS import spilt_secret, get_secret
-from Doc_Decryption import decrypt_doc, bitstring_to_bytes
+from .models import *
+from .hash_rsa import generate_hash, hash_to_rsa_key
+from .Doc_encryption import encrypt_doc
+from .SSS import spilt_secret, get_secret
+from .Doc_Decryption import decrypt_doc, bitstring_to_bytes
 
 BASE_URL = "http://127.0.0.1:8000"
 console = Console()
@@ -92,7 +92,7 @@ class SecureVaultClient:
                 secret=key_iv_bits,
                 no_of_owners=len(owners),
                 k=k,
-                n=len(people)
+                n=len(people)  # Match server's flawed logic
             )
 
             pb_keys = self.get_pbkeys(owners + people)
