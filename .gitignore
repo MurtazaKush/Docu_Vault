@@ -2,6 +2,7 @@ try.py
 Server/
 *.db
 new_client.py
+client_fix.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
