@@ -180,6 +180,7 @@ def execute_request(lp):
     }
     fp=get_file(R.doc_id)
     dfp= decrypt_doc(fp,sss_in)
+    os.remove(fp)
     if R.req_type==Req_type.READ:
         reupload(R,dfp)
     return dfp
@@ -218,6 +219,7 @@ def reupload(req:myRequest_User_View,dfp=None):
             data={"up_doc": json.dumps(req_B.model_dump())},
             files={"file": (efp,f,'application/octet-stream')} # check
         )
+        os.remove(efp)
         if response.json()==True:
             print("File Reuploaded Successfully")
         else:
@@ -477,6 +479,7 @@ def up_doc()->bool:
                 data={"up_doc": json.dumps(upload_data.model_dump())},
                 files={"file": (upload_data.filename,f,'application/octet-stream')} # check
             )
+            os.remove(enc_file)
         return response.json()
     except IOError as e:
         print(f"File access error: {str(e)}")
