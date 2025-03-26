@@ -12,11 +12,6 @@ from .Doc_encryption import *
 from .SSS import *
 from .Doc_Decryption import *
 from .models import *
-def fix_base64_padding(data):
-    missing_padding = len(data) % 4
-    if missing_padding:
-        data += "=" * (4 - missing_padding)
-    return data
 
 def rsa_encrypt(key_str, message:str):# give only public key in readable format pu.export_key().decode()
     """Encrypt a message using RSA public or private key (PEM format)."""
@@ -74,13 +69,16 @@ def login() -> bool:
     post_login_options={"My Documents": show_docs,
                         "My requests": show_my_requests,
                         "Other requests": show_other_requests,
-                        "Upload new Document": up_doc}
-    for i,op in enumerate(post_login_options.keys()):
-        print(f"{i+1} {op}")
-    choice=int(input("Enter Choice: "))
-    print(type(post_login_options.keys()))
-    if post_login_options[list(post_login_options.keys())[choice-1]]():
-        print("Operation Successful")
+                        "Upload new Document": up_doc,
+                        "Logout":None}
+    while True:
+        for i,op in enumerate(post_login_options.keys()):
+            print(f"{i+1} {op}")
+        choice=int(input("Enter Choice: "))
+        if choice==len(post_login_options.keys()):
+            break
+        if post_login_options[list(post_login_options.keys())[choice-1]]():
+            print("Operation Successful")
     return True
 
 def signup() -> bool:
@@ -114,22 +112,117 @@ def show_my_requests():
         if not requests:
             print("No requests found.")
             return False
-
+        lp=[]
+        lwu=[]
         for req in requests:
             print(f"Request ID: {req['req_id']}")
             print(f"Filename: {req['filename']}")
             print(f"Description: {req['description']}")
             print(f"Request Type: {req['req_type']}")
             print(f"Valid Time: {req['valid_time']} hours")
+            print(f"Owners who signed: {req['s_o']}")
+            print(f"People who signed: {req['s_k']}")
             print(f"Status: {req['status']}")
             print("-" * 40)
-
+            if req['status']==Req_status.LIVE_PENDING:
+                lp.append(req)
+            if req['status']==Req_status.LIVE_WAITING_UPLOAD:
+                lwu.append(req)
+        if len(lp)>0:
+            print(f"Would u like to execute these requests? {[req['req_id'] for req in lp]} (0/1):")
+            ch=int(input(""))
+            if ch==1:
+                execute_request(lp)
+        if len(lwu)>0:
+            print(f"Would u like to upload file for these requests? {[req['req_id'] for req in lwu]} (0/1):")
+            ch=int(input(""))
+            if ch==1:
+                req_id=int(input("Enter the request id: "))
+                R=None
+                for req in lwu:
+                    if req['req_id']==req_id:
+                        R=req
+                if R is None:
+                    print("Invalid Request ID")
+                    return False
+                R=myRequest_User_View.model_validate(R)
+                return reupload(R)
         return True
     else:
         print("Error fetching your requests.")
         return False
 
-
+def execute_request(lp):
+    req_id=int(input("Enter the request id: "))
+    R=None
+    for req in lp:
+        if req['req_id']==req_id:
+            R=req
+    if R is None:
+        print("Invalid Request ID")
+        return False
+    R=myRequest_User_View.model_validate(R)
+    sf=secret_Fetch(username=username,passhash=passhash,req_id=req_id)
+    response = session.post(f"{BASE_URL}/get_secrets/", data=sf.model_dump_json())
+    ds=doc_secret.model_validate(response.json())
+    o_s=[]
+    for ss in ds.list_owners:
+        o_s.append(rsa_decrypt(pr,ss.user_secret))
+    p_s=[]
+    for ss in ds.list_people:
+        p_s.append(rsa_decrypt(pr,ss.user_secret))
+    sss_in={
+        "k":R.k,
+        "o":R.o,
+        'owner':o_s,
+        'people':p_s,
+        'l':R.l
+    }
+    fp=get_file(R.doc_id)
+    dfp= decrypt_doc(fp,sss_in)
+    if R.req_type==Req_type.READ:
+        reupload(R,dfp)
+    return dfp
+def reupload(req:myRequest_User_View,dfp=None):
+    if dfp is None:
+        dfp=input("Enter file path of edited file: ")
+    req_B=reupload_Doc()
+    req_B.username=username
+    req_B.passhash=passhash
+    req_B.req_id=req.req_id
+    req_B.list_owners=[]
+    req_B.list_people=[]
+    sf=Doc_Fetch()
+    sf.doc_id=req.doc_id
+    sf.username=username
+    sf.passhash=passhash
+    response = session.post(f"{BASE_URL}/get_o_p/", data=sf.model_dump_json())
+    op=O_P.model_validate(response.json())
+    efp,key=encrypt_doc(dfp)
+    req_B.l=len(key)
+    sss=spilt_secret(key,len(op.owners),req.k,len(op.owners)+len(op.people))
+    keys=get_pbkeys(op.owners+op.people)
+    for i,p in enumerate(op.people):
+        u=user_secret()
+        u.user_secret=rsa_encrypt(keys[p],sss['people'][i])
+        u.username=p
+        req_B.list_people.append(u)
+    for i,p in enumerate(op.owners):
+        u=user_secret()
+        u.user_secret=rsa_encrypt(keys[p],sss['owner'][i])
+        u.username=p
+        req_B.list_owners.append(u)
+    with open(efp, "rb") as f:
+        response = session.post(
+            f"{BASE_URL}/reupload_doc/",
+            data={"up_doc": json.dumps(req_B.model_dump())},
+            files={"file": (efp,f,'application/octet-stream')} # check
+        )
+        if response.json()==True:
+            print("File Reuploaded Successfully")
+        else:
+            print("File reupload failed")
+        return response.json()
 def show_other_requests():
     """Fetch and display requests from other users that require action."""
     global username, passhash
@@ -168,7 +261,7 @@ def show_other_requests():
         return False
 def sign_request(requests):
     """Sign a request for document access."""
-    global username, passhash, pr
+    global username, passhash, pr, pu
     u=None
     d=None
     req_id = int(input("Enter Request ID to sign: "))
@@ -191,9 +284,7 @@ def sign_request(requests):
     if not response.ok or  response.json()=="":
         print(f"Failed to fetch your encrypted secret. {response.json()}")
         return False
-
     encrypted_secret = response.json()
-    print(encrypted_secret)
     try:
         # Decrypt the secret using the private key
         decrypted_secret = rsa_decrypt(pr, encrypted_secret)
@@ -274,6 +365,26 @@ def get_log_file():
         return True
     else:
         print("Failed to fetch log file.")
+        return False
+    
+def get_file(docid):
+    """Fetch and display the log file for a given document."""
+    global username, passhash
+    u = Doc_Fetch()
+    u.username = username
+    u.passhash = passhash
+    u.doc_id = docid
+
+    response = session.post(f"{BASE_URL}/get_file/", data=u.model_dump_json())
+
+    if response.status_code == 200:
+        log_filename = f"enc_{docid}.bin"
+        with open(log_filename, "wb") as f:
+            f.write(response.content)
+        #print(f"Log file saved as {log_filename}.")
+        return log_filename
+    else:
+        print("Failed to fetch encrypted file.")
         return False
 
 

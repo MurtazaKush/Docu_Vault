@@ -1,22 +1,21 @@
 import hashlib
-import secrets
 import random
 from Crypto.PublicKey import RSA
-from Crypto.Hash import SHA256, SHA512
 from Crypto.Util.number import getPrime
 
 # ---- Hashing Configuration ----
 Algo_change = {
     "hash_algo": "SHA-256",
-    "rsa_bits": 4096,
+    "rsa_bits": 4096,  # RSA Key Size
 }
 
 # ---- Hashing Functions ----
 def mix_username_password(username, password):
-    """Mix username and password in a deterministic but non-trivial way."""
-    # Use a secure method to derive a seed
+    """Mix username and password deterministically."""
     seed = hashlib.sha256((username + password).encode()).digest()
-    random.seed(seed)  # Seed the random module securely
+    seed_int = int.from_bytes(seed, "big")
+    random.seed(seed_int)  # Ensures the same ratio every time
+    
     ratio = random.randint(2, len(password) - 1)
     return password[:ratio] + username + password[ratio:]
 
@@ -29,7 +28,7 @@ def generate_hash(value):
     else:
         raise ValueError("Unsupported hash algorithm in Algo_change")
 
-# ---- RSA Key Generation ----
+# ---- Deterministic RSA Key Generation ----
 def hash_to_rsa_key(username, password):
     """
     Deterministically generate an RSA key pair from username and password.
@@ -39,14 +38,16 @@ def hash_to_rsa_key(username, password):
     user_hash = generate_hash(mixed_value)
     seed_int = int(user_hash, 16)
 
-    # Use secrets for secure random number generation
+    # Ensure the same prime numbers are generated every time
+    random.seed(seed_int)
+
     bits = Algo_change["rsa_bits"] // 2
 
-    p = getPrime(bits, randfunc=lambda n: secrets.randbits(n).to_bytes((n + 7) // 8, 'big'))
-    q = getPrime(bits, randfunc=lambda n: secrets.randbits(n).to_bytes((n + 7) // 8, 'big'))
+    p = getPrime(bits, randfunc=lambda n: random.getrandbits(n).to_bytes((n + 7) // 8, 'big'))
+    q = getPrime(bits, randfunc=lambda n: random.getrandbits(n).to_bytes((n + 7) // 8, 'big'))
 
-    if p == q:
-        q = getPrime(bits, randfunc=lambda n: secrets.randbits(n).to_bytes(n // 8, 'big'))
+    while p == q:
+        q = getPrime(bits, randfunc=lambda n: random.getrandbits(n).to_bytes((n + 7) // 8, 'big'))
 
     key = RSA.construct((p * q, 65537, pow(65537, -1, (p - 1) * (q - 1)), p, q))
     return key, key.publickey()

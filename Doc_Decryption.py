@@ -36,7 +36,7 @@ def decrypt_doc(encrypted_filename, secret_shares, algo="AES-CTR"):
         raise ValueError(f"Unsupported decryption algorithm: {algo}")
 
     # Parse JSON and validate structure
-    secret_shares_dict = json.loads(secret_shares)
+    secret_shares_dict = secret_shares
     required_keys = ["owner", "people", "k", "o", "l"]
     if not all(key in secret_shares_dict for key in required_keys):
         raise ValueError("Invalid secret_shares format!")
@@ -62,8 +62,8 @@ def decrypt_doc(encrypted_filename, secret_shares, algo="AES-CTR"):
     plaintext = decrypt_func(ciphertext, key, iv)
 
     # Save decrypted file
-    decrypted_filename = encrypted_filename.replace(".enc", "_decrypted")
+    decrypted_filename = encrypted_filename.replace("enc_", "decrypted_")
     with open(decrypted_filename, 'wb') as f:
         f.write(plaintext)
-
+    print(decrypted_filename)
     return decrypted_filename

@@ -125,6 +125,7 @@ class myRequest_User_View(BaseModel):
     o: int=0
     k: int=0
     n: int=0
+    l:int =0
     description: str=""
     filename: str=""
     req_time: datetime=datetime.utcnow()

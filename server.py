@@ -199,8 +199,9 @@ def update_req_status(db: Session = Depends(get_db)):
     r=db.exec(select(Requests).where(Requests.status==Req_status.LIVE_WAITING)).all()
     for req in r:
         doc=db.exec(select(Doc).where(Doc.id==req.doc_id)).one()
-        if db.exec(select(func.count()).select_from(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.OWNER)) == doc.o and\
-            db.exec(select(func.count()).select_from(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.PEOPLE)) >= doc.k:
+        print("Alert: ",db.exec(select(func.count()).select_from(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.OWNER)),db.exec(select(func.count()).select_from(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.PEOPLE)))
+        if db.exec(select(func.count()).select_from(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.OWNER)).one() == doc.o and\
+            db.exec(select(func.count()).select_from(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.PEOPLE)).one() >= doc.k:
             req.status=Req_status.LIVE_PENDING
             db.add(req)
     db.commit()
@@ -262,6 +263,7 @@ def gen_myRequest_User_View(req: Requests,db: Session = Depends(get_db)):
     ans.n=doc.n
     ans.k=doc.k
     ans.o=doc.o
+    ans.l=doc.l
     ans.s_k= [x.user_id for x in db.exec(select(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.PEOPLE)).all()]
     ans.s_o= [x.user_id for x in db.exec(select(Permission).where(Permission.req_id==req.id,Permission.p_type==secret_type.OWNER)).all()]
     return ans
@@ -419,7 +421,9 @@ def fetch_secret(s_req:secret_Fetch,db: Session = Depends(get_db)):
 
 
 @app.post("/reupload_doc/",response_model=bool)
-async def reupload_file(up_doc: reupload_Doc,file: UploadFile ,db: Session = Depends(get_db)):
+async def reupload_file(up_doc:str=Form(...),file: UploadFile=File(...) ,db: Session = Depends(get_db)):
+    up_doc = json.loads(up_doc)  # Convert JSON string to a Python dictionary
+    up_doc = reupload_Doc(**up_doc)
     req=db.exec(select(Requests).where(Requests.id==up_doc.req_id)).one_or_none()
     if req is None or req.status!=Req_status.LIVE_WAITING_UPLOAD:
         return False
@@ -447,10 +451,11 @@ async def reupload_file(up_doc: reupload_Doc,file: UploadFile ,db: Session = Dep
     with open(doc.file_path,"wb") as f:
         f.write(contents)
     with open(doc.log_file_path,"a") as f:
-        f.write(f"{doc.filename} Uploaded at {datetime.datetime.now(timezone.utc).isoformat()} by {up_doc.username}\n\
+        f.write(f"{doc.filename} Uploaded at {datetime.now(timezone.utc).isoformat()} by {up_doc.username}\n\
                 Edited: {"Yes" if req.req_type==Req_type.WRITE else "No"}\n\
                 Permitting People: {", ".join(people)}\n\
                 \n\n")
+    doc.accessible=True
     db.add(doc)
     req.status=Req_status.EXPIRED_SUCCESSFUL
     db.add(req)
