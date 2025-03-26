@@ -72,13 +72,15 @@ class SecureVaultClient:
                 f"{BASE_URL}/signup/",
                 data=user_data.model_dump_json()
             )
-            return response.ok
+            signup_result = response.json()
+            return signup_result
+        
         except Exception as e:
             console.print(f"[red]Signup error: {str(e)}[/red]")
             return False
 
     # --- Document Management ---
-    def upload_document(self, file_path: str, owners: list, people: list, k: int, description: str) -> bool:
+    def upload_document(self, file_path: str, owners: list[str], people: list[str], k: int, description: str) -> bool:
         try:
             # Existing validation logic
             if set(owners) & set(people):
@@ -92,7 +94,7 @@ class SecureVaultClient:
                 secret=key_iv_bits,
                 no_of_owners=len(owners),
                 k=k,
-                n=len(people)  # Match server's flawed logic
+                n=len(people) + len(owners)
             )
 
             pb_keys = self.get_pbkeys(owners + people)
@@ -127,8 +129,8 @@ class SecureVaultClient:
                     response = self._make_request(
                         'POST',
                         f"{BASE_URL}/add_doc/",
-                        data={"up_doc": upload_data.model_dump_json()},
-                        files={"file": f}
+                        data={"up_doc": upload_data.model_dump_json()}, # might have to change
+                        files={"file": f} # check
                     )
                 
                 return response is not None and response.ok
@@ -158,7 +160,7 @@ class SecureVaultClient:
             docs_data = Doc_User_Response(**docs_response.json())
             target_doc = next(
                 (doc for doc in docs_data.owner + docs_data.people 
-                 if doc.id == doc_id), None
+                 if doc.id == doc_id), None # check 
             )
 
             file_request = Doc_Fetch(
