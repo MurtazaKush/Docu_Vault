@@ -479,8 +479,6 @@ def up_doc()->bool:
     upload_data.description=description
     for i in range(len(owners)):
         upload_data.list_owners.append(gen_user_secret(sss_shares['owner'][i],owners[i],keys[owners[i]]))
-        if owners[i]==username:
-            temp=upload_data.list_owners[-1].user_secret
     for i in range(len(people)):
         upload_data.list_people.append(gen_user_secret(sss_shares['people'][i],people[i],keys[people[i]]))
     try:
