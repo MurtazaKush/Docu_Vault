@@ -259,7 +259,7 @@ def show_other_requests():
             print(f"Status: {req['status']}")
             print(f"Signed: {req['signed']}")
             print("-" * 40)
-            if req['signed']==False:
+            if req['signed']==False and (req['status']==Req_status.LIVE_WAITING or req['status']==Req_status.LIVE_PENDING):
                 cnt.append(req['req_id'])
         if len(cnt)>0:
             print(f"Requests {str(cnt)} are waiting for sign would you like to sign? (0/1)")
