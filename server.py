@@ -310,12 +310,16 @@ def get_other_requests(user: User_F,db: Session = Depends(get_db)):
     for d in docs_o:
         r=db.exec(select(Requests).where(Requests.doc_id==d)).all()
         for req in r:
+            if req.user_id==user.username:
+                continue
             a=gen_Request_User_View(req,user.username,db)
             a.user_type = secret_type.OWNER
             ans.append(a)
     for d in docs_p:
         r=db.exec(select(Requests).where(Requests.doc_id==d)).all()
         for req in r:
+            if req.user_id==user.username:
+                continue
             a=gen_Request_User_View(req,user.username,db)
             a.user_type = secret_type.PEOPLE
             ans.append(a)

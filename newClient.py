@@ -1,10 +1,8 @@
 import requests
-import click
 import json
+import shutil
 import os
 import base64
-from rich.console import Console
-from rich.table import Table
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from .hash_rsa import *
@@ -12,7 +10,8 @@ from .Doc_encryption import *
 from .SSS import *
 from .Doc_Decryption import *
 from .models import *
-
+USER_FS= ".\\User"
+os.makedirs(USER_FS,exist_ok=True)
 def rsa_encrypt(key_str, message:str):# give only public key in readable format pu.export_key().decode()
     """Encrypt a message using RSA public or private key (PEM format)."""
     key = RSA.import_key(key_str)
@@ -66,6 +65,7 @@ def login() -> bool:
     except Exception as e:
         print(f"Login error: {str(e)}")
         return False
+    print(f"You are now logged in as {username}")
     post_login_options={"My Documents": show_docs,
                         "My requests": show_my_requests,
                         "Other requests": show_other_requests,
@@ -85,7 +85,6 @@ def signup() -> bool:
     try:
         uname=input("Set Username: ")
         pw=input("Set password: ")
-        print(uname,pw)
         private_key, public_key = hash_to_rsa_key(uname, pw)
         u=User(username=uname,passhash=generate_hash(pw),pb_key=public_key.export_key().decode())
         response = session.post(
@@ -94,6 +93,7 @@ def signup() -> bool:
         )
         if not response.json():
             print("Username Taken")
+        print("Signup Successful")
         return response.json()
     except Exception as e:
         print(f"Signup error: {str(e)}")
@@ -121,7 +121,9 @@ def show_my_requests():
             print(f"Request Type: {req['req_type']}")
             print(f"Valid Time: {req['valid_time']} hours")
             print(f"Owners who signed: {req['s_o']}")
+            print(f"o: {req['o']}")
             print(f"People who signed: {req['s_k']}")
+            print(f"k: {req['k']}")
             print(f"Status: {req['status']}")
             print("-" * 40)
             if req['status']==Req_status.LIVE_PENDING:
@@ -180,7 +182,14 @@ def execute_request(lp):
     }
     fp=get_file(R.doc_id)
     dfp= decrypt_doc(fp,sss_in)
+    p1=os.path.join(USER_FS,username)
+    os.makedirs(p1,exist_ok=True)
+    p1=os.path.join(p1,"files")
+    os.makedirs(p1,exist_ok=True)
+    p1=os.path.join(p1,os.path.basename(dfp))
     os.remove(fp)
+    shutil.move(dfp,p1)
+    dfp=p1
     if R.req_type==Req_type.READ:
         reupload(R,dfp)
     return dfp
@@ -219,11 +228,12 @@ def reupload(req:myRequest_User_View,dfp=None):
             data={"up_doc": json.dumps(req_B.model_dump())},
             files={"file": (efp,f,'application/octet-stream')} # check
         )
-        if response.json()==True:
-            print("File Reuploaded Successfully")
-        else:
-            print("File reupload failed")
-        return response.json()
+    os.remove(efp)
+    if response.json()==True:
+        print("File Reuploaded Successfully")
+    else:
+        print("File reupload failed")
+    return response.json()
 def show_other_requests():
     """Fetch and display requests from other users that require action."""
     global username, passhash
@@ -252,7 +262,7 @@ def show_other_requests():
             if req['signed']==False:
                 cnt.append(req['req_id'])
         if len(cnt)>0:
-            print(f"{str(cnt)} are waiting for sign would you like to sign? (0/1)")
+            print(f"Requests {str(cnt)} are waiting for sign would you like to sign? (0/1)")
             ch=int(input(""))
             if ch==1:
                 sign_request(requests)
@@ -355,11 +365,15 @@ def get_log_file():
     u.username = username
     u.passhash = passhash
     u.doc_id = docid
-
+    p1=os.path.join(USER_FS,username)
+    os.makedirs(p1,exist_ok=True)
+    p1=os.path.join(p1,"log")
+    os.makedirs(p1,exist_ok=True)
     response = session.post(f"{BASE_URL}/get_log_file/", data=u.model_dump_json())
 
     if response.status_code == 200:
         log_filename = f"log_{docid}.txt"
+        log_filename=os.path.join(p1,log_filename)
         with open(log_filename, "wb") as f:
             f.write(response.content)
         print(f"Log file saved as {log_filename}.")
@@ -408,7 +422,6 @@ def create_req():
     req.description = description
     req.valid_time = valid_time
     req.req_type = Req_type.READ if req_type == "r" else Req_type.WRITE
-    print(req.model_dump_json())
     response = session.post(f"{BASE_URL}/create_request/", data=req.model_dump_json())
 
     if response.ok and response.json():
@@ -471,14 +484,13 @@ def up_doc()->bool:
     for i in range(len(people)):
         upload_data.list_people.append(gen_user_secret(sss_shares['people'][i],people[i],keys[people[i]]))
     try:
-        print(json.dumps(upload_data.model_dump()), "application/json")
         with open(enc_file, "rb") as f:
             response = session.post(
                 f"{BASE_URL}/add_doc/",
                 data={"up_doc": json.dumps(upload_data.model_dump())},
                 files={"file": (upload_data.filename,f,'application/octet-stream')} # check
             )
-            os.remove(enc_file)
+        os.remove(enc_file)
         return response.json()
     except IOError as e:
         print(f"File access error: {str(e)}")
@@ -496,15 +508,13 @@ def get_pbkeys(usernames: list) -> dict:
     except:
         return {}
 def main():
-    initial_options={"Login":login,"Signup":signup}
+    initial_options={"Login":login,"Signup":signup,"End":None}
     while True:
         for i,op in enumerate(initial_options.keys()):
             print(f"{i+1} {op}")
         choice=int(input("Enter Choice: "))
-        print(type(initial_options.keys()))
-        if initial_options[list(initial_options.keys())[choice-1]]():
-            print("Operation Successful")
-        else:
-            print("Operation Failed")
+        if choice==len(initial_options.keys()):
+            break
+        initial_options[list(initial_options.keys())[choice-1]]()
 if __name__=='__main__':
     main()

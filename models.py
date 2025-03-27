@@ -30,11 +30,11 @@ class owner_doc(SQLModel,table =True):
     owner_id: str =Field(foreign_key='user.username',primary_key=True,default=0)
     encrypted_secret: str =""
 class Req_status(str,Enum):
-    LIVE_PENDING="L_P"
-    EXPIRED_SUCCESSFUL="E_S"
-    EXPIRED_FAILED="E_F"
-    LIVE_WAITING="L_W"
-    LIVE_WAITING_UPLOAD="L_W_U"
+    LIVE_PENDING="LIVE PENDING"
+    EXPIRED_SUCCESSFUL="EXPIRED SUCCESSFUL"
+    EXPIRED_FAILED="EXPIRED FAILED"
+    LIVE_WAITING="LIVE WAITING"
+    LIVE_WAITING_UPLOAD="LIVE WAITING UPLOAD"
 class Req_type(str,Enum):
     READ="r"
     WRITE="w"
