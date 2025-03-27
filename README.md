@@ -44,4 +44,3 @@ This project provides a secure system for encrypting, decrypting, hashing, and s
 This project is open-source under the MIT License.
 ```
 
-Would you like any additional sections, such as contributors or API details? 🚀
