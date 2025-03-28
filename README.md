@@ -27,7 +27,7 @@ This project provides a secure system for encrypting, decrypting, hashing, and s
    ```
 4. Install dependencies:
    ```sh
-   pip install -r req.txt
+   pip install -r requirements.txt
    ```
 5. Start the server:
    Run from parent of git directory after activating virtual environment
